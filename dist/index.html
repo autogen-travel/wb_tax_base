@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ru">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>WB Tax Base — УСН 6%</title>
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body>
+        <div class="app">
+            <header class="hero">
+                <div>
+                    <div class="eyebrow">WB отчеты → налоговая база</div>
+                    <h1>УСН 6%: расчет базы по API Wildberries</h1>
+                    <p>
+                        Введите API‑ключ и период. Приложение получит отчет
+                        через API и посчитает базу РФ, ЕАЭС и налог 6%.
+                    </p>
+                </div>
+                <div class="hero-card">
+                    <div class="hero-stat">
+                        <span class="label">Режим</span>
+                        <span class="value">УСН доходы</span>
+                    </div>
+                    <div class="hero-stat">
+                        <span class="label">Формула</span>
+                        <span class="value"
+                            >Реализация + отрицат. ВВ + ущерб + ЕАЭС</span
+                        >
+                    </div>
+                </div>
+            </header>
+
+            <section class="grid">
+                <div class="card">
+                    <h2>Запрос по API</h2>
+                    <div class="form">
+                        <label>
+                            API токен WB (Статистика)
+                            <div class="row token-row">
+                                <input
+                                    id="token"
+                                    type="password"
+                                    placeholder="Вставьте токен"
+                                />
+                                <button id="auth" class="ghost">
+                                    Авторизация
+                                </button>
+                            </div>
+                        </label>
+                        <div class="auth-result" id="auth-result"></div>
+                    </div>
+                </div>
+
+                <div class="card" id="sources-card">
+                    <h2>Источники</h2>
+                    <div class="row full-row form">
+                        <label>
+                            Режим
+                            <select id="period-mode">
+                                <option value="quarter" selected>
+                                    По кварталам
+                                </option>
+                                <option value="dates">По датам</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="row form" id="quarter-row">
+                        <label>
+                            Квартал
+                            <select id="quarter">
+                                <option value="1">1 квартал</option>
+                                <option value="2">2 квартал</option>
+                                <option value="3">3 квартал</option>
+                                <option value="4" selected>4 квартал</option>
+                            </select>
+                        </label>
+                        <label id="year-wrap">
+                            Год
+                            <input
+                                id="year"
+                                type="number"
+                                min="2020"
+                                max="2035"
+                                value="2025"
+                            />
+                        </label>
+                    </div>
+                    <div class="row form" id="date-row">
+                        <label>
+                            Дата начала
+                            <input
+                                id="date-from"
+                                type="date"
+                                placeholder="2025-06-23"
+                            />
+                        </label>
+                        <label>
+                            Дата окончания
+                            <input
+                                id="date-to"
+                                type="date"
+                                placeholder="2025-06-29"
+                            />
+                        </label>
+                    </div>
+                    <button id="fetch" class="primary">Рассчитать</button>
+                    <div class="hint" id="fetch-hint"></div>
+                    <div class="hint" id="progress-hint"></div>
+                </div>
+            </section>
+
+            <section class="grid">
+                <div class="card results" id="results-card">
+                    <h2>Результаты</h2>
+                    <div class="result-overlay" id="results-overlay">
+                        <div class="spinner"></div>
+                        <div class="overlay-text">Считаем...</div>
+                    </div>
+                    <div class="result-grid" id="results">
+                        <div class="result-card">
+                            <div class="label">База РФ</div>
+                            <div class="value">—</div>
+                        </div>
+                        <div class="result-card">
+                            <div class="label">База ЕАЭС</div>
+                            <div class="value">—</div>
+                        </div>
+                        <div class="result-card">
+                            <div class="label">Итоговая база</div>
+                            <div class="value">—</div>
+                        </div>
+                        <div class="result-card">
+                            <div class="label">Налог 6%</div>
+                            <div class="value">—</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>Диагностика</h2>
+                    <div class="muted" id="diagnostics">
+                        Нет данных. Выполните расчет.
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <script src="renderer.js"></script>
+    </body>
+</html>
