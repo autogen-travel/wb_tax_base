@@ -19,6 +19,8 @@ const state = {
   lastSummary: null,
   authorized: false,
   busy: false,
+  cooldownUntil: 0,
+  cooldownTimer: null,
 };
 
 const el = (id) => document.getElementById(id);
@@ -275,6 +277,23 @@ function formatApiSample(rows) {
   }
 }
 
+function extractErrorDetail(err) {
+  const message = String(err && err.message ? err.message : err);
+  const jsonStart = message.indexOf("{");
+  if (jsonStart === -1) return message;
+  const payload = message.slice(jsonStart);
+  try {
+    const parsed = JSON.parse(payload);
+    return parsed.detail || parsed.details || message;
+  } catch (_e) {
+    const detailMatch =
+      payload.match(/"detail"\s*:\s*"([^"]+)"/) ||
+      payload.match(/"details"\s*:\s*"([^"]+)"/);
+    if (detailMatch && detailMatch[1]) return detailMatch[1];
+    return message;
+  }
+}
+
 function renderAuth(info) {
   const authEl = el("auth-result");
   if (!info) {
@@ -295,12 +314,15 @@ function renderAuth(info) {
 
 function setAuthorized(isAuthorized) {
   state.authorized = isAuthorized;
-  ["period-mode", "quarter", "year", "date-from", "date-to", "fetch"].forEach(
-    (id) => {
-      const node = el(id);
-      if (node) node.disabled = !isAuthorized || state.busy;
-    },
-  );
+  ["period-mode", "quarter", "year", "date-from", "date-to"].forEach((id) => {
+    const node = el(id);
+    if (node) node.disabled = !isAuthorized || state.busy;
+  });
+  const fetchBtn = el("fetch");
+  if (fetchBtn) {
+    fetchBtn.disabled =
+      !isAuthorized || state.busy || Date.now() < state.cooldownUntil;
+  }
   const sourcesCard = el("sources-card");
   const resultsCard = el("results-card");
   if (sourcesCard)
@@ -342,21 +364,44 @@ async function fetchReportDetailByPeriodPaged(
   dateTo,
   onProgress,
 ) {
-  const limit = 50000;
+  const limit = 99000;
   let rrdid = 0;
   let all = [];
   let batch = 0;
   let lastRrdId = 0;
+  const cooldownSeconds = 60;
+
+  async function waitCooldown() {
+    for (let remaining = cooldownSeconds; remaining > 0; remaining -= 1) {
+      if (onProgress) onProgress({ phase: "cooldown", remaining });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  async function requestPage() {
+    while (true) {
+      try {
+        return await wbApi.reportDetailByPeriod({
+          token,
+          dateFrom,
+          dateTo,
+          limit,
+          rrdid,
+          period: "daily",
+        });
+      } catch (err) {
+        const message = String(err && err.message ? err.message : err);
+        if (message.includes("429")) {
+          await waitCooldown();
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
 
   while (true) {
-    const rows = await wbApi.reportDetailByPeriod({
-      token,
-      dateFrom,
-      dateTo,
-      limit,
-      rrdid,
-      period: "daily",
-    });
+    const rows = await requestPage();
 
     if (!Array.isArray(rows) || rows.length === 0) {
       break;
@@ -364,7 +409,7 @@ async function fetchReportDetailByPeriodPaged(
 
     all = all.concat(rows);
     batch += 1;
-    if (onProgress) onProgress({ batch, total: all.length });
+    if (onProgress) onProgress({ phase: "progress", batch, total: all.length });
 
     const last = rows[rows.length - 1];
     const nextRrdId = last?.rrd_id ?? last?.rrdId ?? last?.rrdid;
@@ -374,6 +419,7 @@ async function fetchReportDetailByPeriodPaged(
     }
     rrdid = nextRrdId;
     lastRrdId = nextRrdId;
+    await waitCooldown();
   }
 
   return {
@@ -413,24 +459,52 @@ async function authorize() {
     setAuthorized(true);
     saveToken(token);
   } catch (err) {
-    authEl.textContent = `Ошибка авторизации: ${err.message}`;
+    authEl.textContent = `Ошибка авторизации: ${extractErrorDetail(err)}`;
     setAuthorized(false);
   }
 }
 
 function setBusy(isBusy) {
   state.busy = isBusy;
-  ["period-mode", "quarter", "year", "date-from", "date-to", "fetch"].forEach(
-    (id) => {
-      const node = el(id);
-      if (node) node.disabled = !state.authorized || isBusy;
-    },
-  );
+  ["period-mode", "quarter", "year", "date-from", "date-to"].forEach((id) => {
+    const node = el(id);
+    if (node) node.disabled = !state.authorized || isBusy;
+  });
+  const fetchBtn = el("fetch");
+  if (fetchBtn) {
+    fetchBtn.disabled =
+      !state.authorized || isBusy || Date.now() < state.cooldownUntil;
+  }
   const sourcesCard = el("sources-card");
   if (sourcesCard)
     sourcesCard.classList.toggle("is-disabled", !state.authorized || isBusy);
   const overlay = el("results-overlay");
   if (overlay) overlay.classList.toggle("is-visible", isBusy);
+}
+
+function startCooldown(seconds) {
+  state.cooldownUntil = Date.now() + seconds * 1000;
+  const hint = el("fetch-hint");
+  if (state.cooldownTimer) {
+    clearInterval(state.cooldownTimer);
+  }
+  state.cooldownTimer = setInterval(() => {
+    const remaining = Math.max(
+      0,
+      Math.ceil((state.cooldownUntil - Date.now()) / 1000),
+    );
+    const fetchBtn = el("fetch");
+    if (fetchBtn) {
+      fetchBtn.disabled = !state.authorized || state.busy || remaining > 0;
+    }
+    if (remaining > 0) {
+      hint.textContent = `Лимит WB: осталось ${remaining}с до следующего запроса.`;
+    } else {
+      clearInterval(state.cooldownTimer);
+      state.cooldownTimer = null;
+      if (!state.busy) hint.textContent = "";
+    }
+  }, 1000);
 }
 
 async function fetchAndCompute() {
@@ -456,6 +530,14 @@ async function fetchAndCompute() {
     hint.textContent = "Сначала выполните авторизацию.";
     return;
   }
+  if (Date.now() < state.cooldownUntil) {
+    const remaining = Math.max(
+      0,
+      Math.ceil((state.cooldownUntil - Date.now()) / 1000),
+    );
+    hint.textContent = `Лимит WB: осталось ${remaining}с до следующего запроса.`;
+    return;
+  }
 
   saveToken(token);
 
@@ -478,14 +560,19 @@ async function fetchAndCompute() {
   clearResults();
   hint.textContent = "Запрос данных отчета...";
   setBusy(true);
+  startCooldown(60);
 
   try {
     const result = await fetchReportDetailByPeriodPaged(
       token,
       dateFrom,
       dateTo,
-      ({ batch, total }) => {
-        hint.textContent = `Загрузка данных... пакетов: ${batch}, строк: ${total}`;
+      (payload) => {
+        if (payload.phase === "cooldown") {
+          hint.textContent = `Ожидание лимита WB: ${payload.remaining}с`;
+          return;
+        }
+        hint.textContent = `Загрузка данных... пакетов: ${payload.batch}, строк: ${payload.total}`;
       },
     );
     const rows = result.rows;
@@ -501,7 +588,7 @@ async function fetchAndCompute() {
     hint.textContent = `Готово. Период: ${dateFrom} → ${dateTo}.`;
     saveToken(token);
   } catch (err) {
-    hint.textContent = `Ошибка: ${err.message}`;
+    hint.textContent = `Ошибка: ${extractErrorDetail(err)}`;
   } finally {
     setBusy(false);
   }
