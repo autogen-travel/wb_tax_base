@@ -85,10 +85,62 @@ function publicAccounts($accounts) {
     $result = array();
     foreach ($accounts as $account) {
         if (isset($account['id'], $account['name'], $account['token'])) {
-            $result[] = array('id' => $account['id'], 'name' => $account['name'], 'hasToken' => true);
+            $result[] = array(
+                'id' => $account['id'],
+                'name' => $account['name'],
+                'hasToken' => true,
+                'sellerName' => isset($account['sellerName']) ? $account['sellerName'] : '',
+                'sid' => isset($account['sid']) ? $account['sid'] : '',
+                'tin' => isset($account['tin']) ? $account['tin'] : '',
+                'tokenExpiresAt' => isset($account['tokenExpiresAt']) ? (int)$account['tokenExpiresAt'] : null
+            );
         }
     }
     return $result;
+}
+
+function inspectSellerToken($token) {
+    if (!function_exists('curl_init')) respond(500, array('error' => 'На хостинге не включено PHP расширение cURL.'));
+    $parts = explode('.', $token);
+    if (count($parts) !== 3) respond(400, array('error' => 'Токен не похож на JWT. Проверьте, что скопирован полный токен Wildberries.'));
+    $payload = strtr($parts[1], '-_', '+/');
+    $payload .= str_repeat('=', (4 - strlen($payload) % 4) % 4);
+    $decoded = base64_decode($payload, true);
+    $claims = $decoded === false ? null : json_decode($decoded, true);
+    if (!is_array($claims) || !isset($claims['exp']) || !is_numeric($claims['exp'])) {
+        respond(400, array('error' => 'Не удалось прочитать срок действия токена. Проверьте токен Wildberries.'));
+    }
+    $curl = curl_init('https://common-api.wildberries.ru/api/v1/seller-info');
+    curl_setopt_array($curl, array(
+        CURLOPT_HTTPGET => true,
+        CURLOPT_HTTPHEADER => array('Authorization: Bearer ' . $token, 'Accept: application/json'),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ));
+    $response = curl_exec($curl);
+    $curlError = curl_error($curl);
+    $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    curl_close($curl);
+    if ($response === false) respond(502, array('error' => 'Не удалось проверить токен в Wildberries: ' . $curlError));
+    $seller = json_decode($response, true);
+    if ($status < 200 || $status >= 300 || !is_array($seller)) {
+        if ($status === 429) respond(429, array('error' => 'Wildberries ограничил частоту проверки кабинета. Подождите минуту и повторите.'));
+        if ($status === 401) respond(400, array('error' => 'Wildberries отклонил токен. Проверьте, что он действителен.'));
+        $detail = isset($seller['detail']) ? $seller['detail'] : (isset($seller['title']) ? $seller['title'] : 'HTTP ' . $status);
+        respond($status >= 400 ? $status : 502, array('error' => 'Wildberries не смог определить кабинет: ' . $detail));
+    }
+    $sid = isset($seller['sid']) ? (string)$seller['sid'] : '';
+    $sellerName = isset($seller['name']) ? (string)$seller['name'] : '';
+    if ($sid === '' && $sellerName === '') respond(502, array('error' => 'Wildberries ответил без данных кабинета.'));
+    return array(
+        'sellerName' => $sellerName,
+        'sid' => $sid,
+        'tin' => isset($seller['tin']) ? (string)$seller['tin'] : '',
+        'tokenExpiresAt' => (int)$claims['exp']
+    );
 }
 
 $accounts = accountStore();
@@ -99,22 +151,29 @@ if ($action === 'saveAccount') {
     $id = isset($body['id']) && is_string($body['id']) ? $body['id'] : '';
     $name = isset($body['name']) && is_string($body['name']) ? trim($body['name']) : '';
     $token = isset($body['token']) && is_string($body['token']) ? trim($body['token']) : '';
-    if ($name === '' || strlen($name) > 120) respond(400, array('error' => 'Укажите название кабинета (до 120 символов).'));
+    if (strlen($name) > 120) respond(400, array('error' => 'Название кабинета должно быть не длиннее 120 символов.'));
+    $tokenInfo = null;
+    if ($token !== '') {
+        if (strlen($token) < 10 || strlen($token) > 4096 || preg_match('/[\r\n]/', $token)) respond(400, array('error' => 'Проверьте токен категории «Финансы».'));
+        $tokenInfo = inspectSellerToken($token);
+    }
     $found = false;
     foreach ($accounts as &$account) {
         if ($id !== '' && isset($account['id']) && hash_equals((string)$account['id'], $id)) {
-            $account['name'] = $name;
-            if ($token !== '') $account['token'] = $token;
+            $account['name'] = $name !== '' ? $name : ($tokenInfo && $tokenInfo['sellerName'] !== '' ? $tokenInfo['sellerName'] : $account['name']);
+            if ($token !== '') {
+                $account['token'] = $token;
+                $account = array_merge($account, $tokenInfo);
+            }
             $found = true;
             break;
         }
     }
     unset($account);
     if (!$found) {
-        if (strlen($token) < 10 || strlen($token) > 4096 || preg_match('/[\r\n]/', $token)) respond(400, array('error' => 'Для нового кабинета нужен корректный токен категории «Финансы».'));
-        $accounts[] = array('id' => newAccountId(), 'name' => $name, 'token' => $token);
-    } elseif ($token !== '' && (strlen($token) < 10 || strlen($token) > 4096 || preg_match('/[\r\n]/', $token))) {
-        respond(400, array('error' => 'Проверьте токен категории «Финансы».'));
+        if ($tokenInfo === null) respond(400, array('error' => 'Для нового кабинета нужен токен категории «Финансы».'));
+        $accountName = $name !== '' ? $name : ($tokenInfo['sellerName'] !== '' ? $tokenInfo['sellerName'] : 'Кабинет');
+        $accounts[] = array_merge(array('id' => newAccountId(), 'name' => $accountName, 'token' => $token), $tokenInfo);
     }
     accountStore($accounts);
     respond(200, publicAccounts($accounts));

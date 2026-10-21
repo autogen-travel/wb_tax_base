@@ -50,6 +50,25 @@ function getQuarterRange(year, quarter) {
   return { beginTime: toDate(start), endTime: toDate(end) };
 }
 
+function setPreviousQuarterDefault() {
+  const now = new Date();
+  let year = now.getFullYear();
+  let quarter = Math.floor(now.getMonth() / 3);
+  if (quarter === 0) {
+    quarter = 4;
+    year -= 1;
+  }
+  el("quarter").value = String(quarter);
+  el("year").value = String(year);
+}
+
+function formatTokenExpiry(timestamp) {
+  if (!timestamp) return "срок действия неизвестен";
+  return new Date(timestamp * 1000).toLocaleDateString("ru-RU", {
+    day: "numeric", month: "long", year: "numeric",
+  });
+}
+
 function formatMoney(value) {
   const num = Number(value || 0);
   return num.toLocaleString("ru-RU", {
@@ -137,6 +156,16 @@ function renderAccounts() {
   el("token").placeholder = isBrowserHosted && account ? "Оставьте пустым, если не меняете токен" : "WB токен категории «Финансы»";
   el("remove-account").disabled = !account;
   el("auth").textContent = account ? "Сохранить изменения" : "Добавить кабинет";
+  const info = el("account-info");
+  if (info) {
+    const details = [];
+    if (account?.sellerName) details.push("Кабинет WB: " + account.sellerName);
+    if (account?.sid) details.push("SID: " + account.sid);
+    if (account?.tin) details.push("ИНН: " + account.tin);
+    if (account?.tokenExpiresAt) details.push("Токен действует до " + formatTokenExpiry(account.tokenExpiresAt));
+    info.textContent = details.join(" · ");
+    info.style.display = details.length ? "block" : "none";
+  }
   state.cooldownUntil = account?.cooldownUntil || 0;
   setAuthorized(Boolean(account && (account.token || account.hasToken)));
 }
@@ -570,15 +599,15 @@ async function authorize() {
   const token = el("token").value.trim();
   const authEl = el("auth-result");
   let account = activeAccount();
-  if (!name || (!account && !token)) {
-    authEl.textContent = "Укажите название кабинета и токен категории «Финансы».";
+  if ((!isBrowserHosted && !name) || (!account && !token)) {
+    authEl.textContent = isBrowserHosted ? "Введите токен категории «Финансы»." : "Укажите название кабинета и токен категории «Финансы».";
     authEl.style.display = "block";
     return;
   }
   try {
     if (isBrowserHosted) {
       const saved = await wbApi.saveAccount({ id: account?.id, name, token });
-      state.accounts = saved;
+      state.accounts = Array.isArray(saved) ? saved : [];
       const retainedId = account?.id || state.accounts[state.accounts.length - 1]?.id;
       state.activeAccountId = retainedId || null;
     } else {
@@ -594,7 +623,10 @@ async function authorize() {
     }
     renderAccounts();
     el("token").value = "";
-    authEl.textContent = "Кабинет сохранён на сервере и доступен с других устройств.";
+    const savedAccount = activeAccount();
+    authEl.textContent = isBrowserHosted && savedAccount?.sellerName
+      ? `Проверено: ${savedAccount.sellerName}${savedAccount.sid ? " (SID " + savedAccount.sid + ")" : ""}. Токен действует до ${formatTokenExpiry(savedAccount.tokenExpiresAt)}.`
+      : "Кабинет сохранён на сервере и доступен с других устройств.";
     authEl.style.display = "block";
   } catch (err) {
     authEl.textContent = "Не удалось сохранить кабинет: " + extractErrorDetail(err);
@@ -790,6 +822,7 @@ document.addEventListener("selectstart", (event) => {
   event.preventDefault();
 });
 
+setPreviousQuarterDefault();
 updatePeriodMode();
 loadAccounts().then(() => {
   state.activeAccountId = state.accounts[0]?.id || null;

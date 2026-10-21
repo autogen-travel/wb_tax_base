@@ -44,14 +44,15 @@
                         </label>
                         <label>
                             Название кабинета
-                            <input id="account-name" type="text" placeholder="Например, Основной магазин" />
+                            <input id="account-name" type="text" placeholder="Необязательно — возьмём название из кабинета WB" />
                         </label>
                         <label>
                             Токен WB (категория «Финансы»)
                             <input id="token" type="password" placeholder="Сохранится на сервере для всех устройств" autocomplete="off" />
                         </label>
-                        <button id="auth" class="ghost" type="button">Добавить кабинет</button>
+                        <button id="auth" class="ghost" type="button">Проверить и добавить кабинет</button>
 
+                        <div class="auth-result" id="account-info"></div>
                         <div class="auth-result" id="auth-result"></div>
                     </div>
                 </div>
@@ -76,7 +77,7 @@
                                 <option value="1">1 квартал</option>
                                 <option value="2">2 квартал</option>
                                 <option value="3">3 квартал</option>
-                                <option value="4" selected>4 квартал</option>
+                                <option value="4">4 квартал</option>
                             </select>
                         </label>
                         <label id="year-wrap">
