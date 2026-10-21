@@ -1,36 +1,29 @@
-# Browser version
+# Размещение на shared-хостинге
 
-The web version serves the existing UI and proxies report requests to the WB Finance API. It can run on a VPS with Docker Compose and a domain name.
+Пакет для загрузки находится в `shared-hosting/wb/`. Он работает на PHP 5.6+ и не требует Node.js или Docker.
 
-## Deploy
+## Установка на iliukhin.com
 
-1. Point the domain's DNS A record (and AAAA record, if used) to the VPS. Allow inbound ports 80 and 443 in the firewall.
-2. Install Docker Engine and the Docker Compose plugin on the VPS.
-3. Copy this directory to the VPS, then create its private `.env` file:
+1. Загрузите содержимое `shared-hosting/wb/` в `public_html/wb/`. Должны быть `index.html`, `renderer.js`, `styles.css`, `api.php`, `gate.php`, `auth-guard.php` и `.htaccess`.
+2. На сервере скопируйте `.wb-auth.example.php` как `.wb-auth.php`, оставьте имя пользователя `wb` или замените его, и задайте bcrypt-хэш пароля в `password_hash`. Ограничьте доступ к `.wb-auth.php` правами `600`.
+3. Включите HTTPS для сайта и откройте `https://iliukhin.com/wb/`. Браузер покажет стандартное окно Basic Auth. Один и тот же логин/пароль можно использовать на устройствах обоих пользователей.
 
-   ```sh
-   cp .env.example .env
-   ```
+В этом Beget-развёртывании логин и случайный пароль созданы и настроены; выданы в отдельном файле `WB_BASIC_AUTH.txt` в рабочей папке. Не включайте этот файл в архив сайта или Git.
 
-4. Set `DOMAIN` to the domain name and `APP_PASSWORD` to a private password. Generate one with `openssl rand -base64 32`.
-5. Start the app:
+`.htaccess` перенаправляет все обращения `/wb/*` через PHP-шлюз. Шлюз проверяет Basic Auth, отдаёт только ресурсы приложения и вызывает API. Это также защищает `api.php` и файл учётных данных, даже если запрос сделан по прямому URL.
 
-   ```sh
-   docker compose up -d --build
-   ```
+## Общие кабинеты
 
-Caddy requests and renews the HTTPS certificate automatically. Open `https://DOMAIN` and sign in with `APP_PASSWORD`.
+Названия кабинетов и токены хранятся на хостинге и доступны всем, кто вошёл в `/wb`. Кабинеты видны с разных устройств. Браузер получает только ID и названия; PHP-прокси сам подставляет токен при запросе к Wildberries. Новый токен передаётся по HTTPS при добавлении или замене.
 
-## Cabinet tokens
+Токены сохраняются в скрытом исполняемом PHP-файле `.wb-accounts.php` с ограниченными правами. При прямом обращении файл завершает выполнение до данных. Не удаляйте его при обновлении приложения. Для резервной копии храните файл отдельно и защищённо.
 
-Cabinet names and WB Finance tokens are saved in that browser's local storage. They are not written to the server's filesystem or database; the browser sends the selected token to the server only when it requests a report, over HTTPS. Use a personal or service token for the Finance category. Each browser/device has its own cabinet list.
+При первом входе прежние кабинеты из localStorage этого браузера автоматически переносятся на сервер, затем локальные копии удаляются. Если перенос завершится ошибкой, данные останутся в браузере.
 
-## Update
+## Требования
 
-Copy the updated project files to the VPS and run:
+Нужны PHP 5.6+ с cURL и OpenSSL, а также исходящие HTTPS-запросы к `finance-api.wildberries.ru`. На настроенном Beget-хостинге PHP 5.6 и cURL доступны; PHP-прокси написан с совместимостью с этой версией.
 
-```sh
-docker compose up -d --build
-```
+## Архив
 
-Session cookies are HTTP-only, same-site, and secure. The server keeps active sessions and per-token WB request limits in memory; restarting the container clears sessions and limits. The app requires Node.js 22 or later when run outside Docker.
+Готовый ZIP: `WB-shared-hosting.zip`. Распакуйте его содержимое в `public_html/wb/`. Файл с Basic Auth паролем в архив не входит.

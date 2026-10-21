@@ -2,45 +2,28 @@ const tauriInvoke =
   window.__TAURI__?.core?.invoke || window.__TAURI__?.tauri?.invoke;
 const isBrowserHosted = !window.wbApi && !tauriInvoke;
 
-async function browserApiRequest(path, body) {
-  const response = await fetch(path, {
-    method: body ? "POST" : "GET",
+async function browserApiRequest(body) {
+  const response = await fetch("api.php", {
+    method: "POST",
     credentials: "same-origin",
-    headers: body ? { "Content-Type": "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
   const text = response.status === 204 ? "" : await response.text();
   let payload = null;
-  try {
-    payload = text ? JSON.parse(text) : null;
-  } catch (_err) {
-    payload = null;
-  }
-  if (
-    response.status === 401 &&
-    isBrowserHosted &&
-    payload?.error === "Сеанс истёк. Войдите снова."
-  ) {
-    showServerLogin();
-  }
-  if (!response.ok) {
-    throw new Error(payload?.error || text || `HTTP ${response.status}`);
-  }
+  try { payload = text ? JSON.parse(text) : null; } catch (_err) { payload = null; }
+  if (!response.ok) throw new Error((payload && payload.error) || text || ("HTTP " + response.status));
   return payload;
 }
 
 const wbApi = window.wbApi || (tauriInvoke
-  ? {
-      reportDetailByPeriod: (params) =>
-        tauriInvoke("report_detail_by_period", params),
-    }
+  ? { reportDetailByPeriod: (params) => tauriInvoke("report_detail_by_period", params) }
   : {
       isBrowserHosted: true,
-      reportDetailByPeriod: (params) =>
-        browserApiRequest("/api/wb/report-detail", params),
-      session: () => browserApiRequest("/api/session"),
-      login: (password) => browserApiRequest("/api/login", { password }),
-      logout: () => browserApiRequest("/api/logout", {}),
+      reportDetailByPeriod: (params) => browserApiRequest(params),
+      listAccounts: () => browserApiRequest({ action: "listAccounts" }),
+      saveAccount: (account) => browserApiRequest({ action: "saveAccount", ...account }),
+      deleteAccount: (id) => browserApiRequest({ action: "deleteAccount", id }),
     });
 
 const state = {
@@ -76,22 +59,42 @@ function formatMoney(value) {
 }
 
 function saveAccounts() {
+  if (isBrowserHosted) return;
   try {
     localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(state.accounts));
   } catch (_err) {
-    el("auth-result").textContent =
-      "Не удалось сохранить кабинеты в этом браузере.";
+    el("auth-result").textContent = "Не удалось сохранить кабинеты в этом браузере.";
   }
 }
 
-function loadAccounts() {
+async function loadAccounts() {
+  if (isBrowserHosted) {
+    try {
+      const local = JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || "[]");
+      const oldToken = localStorage.getItem(LEGACY_TOKEN_KEY) || "";
+      const legacy = Array.isArray(local) ? local.filter((item) => item && typeof item.token === "string" && item.token.trim()) : [];
+      if (oldToken) legacy.push({ id: createAccountId(), name: "Кабинет 1", token: oldToken });
+      let serverAccounts = await wbApi.listAccounts();
+      for (const account of legacy) {
+        await wbApi.saveAccount({ id: account.id || createAccountId(), name: account.name || "Кабинет", token: account.token });
+      }
+      if (legacy.length) {
+        localStorage.removeItem(ACCOUNTS_KEY);
+        localStorage.removeItem(LEGACY_TOKEN_KEY);
+      }
+      if (legacy.length) serverAccounts = await wbApi.listAccounts();
+      state.accounts = Array.isArray(serverAccounts) ? serverAccounts : [];
+      localStorage.setItem("wb-tax-base-server-migrated", "1");
+    } catch (err) {
+      state.accounts = [];
+      el("auth-result").textContent = "Не удалось загрузить общие кабинеты: " + extractErrorDetail(err);
+      el("auth-result").style.display = "block";
+    }
+    return;
+  }
   try {
     const saved = JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || "[]");
-    if (Array.isArray(saved)) {
-      state.accounts = saved.filter(
-        (account) => account && typeof account.token === "string",
-      );
-    }
+    if (Array.isArray(saved)) state.accounts = saved.filter((account) => account && typeof account.token === "string");
     if (!state.accounts.length) {
       const oldToken = localStorage.getItem(LEGACY_TOKEN_KEY) || "";
       if (oldToken) {
@@ -130,11 +133,12 @@ function renderAccounts() {
   const account = activeAccount();
   select.value = account ? account.id : "__new__";
   el("account-name").value = account?.name || "";
-  el("token").value = account?.token || "";
+  el("token").value = isBrowserHosted ? "" : (account?.token || "");
+  el("token").placeholder = isBrowserHosted && account ? "Оставьте пустым, если не меняете токен" : "WB токен категории «Финансы»";
   el("remove-account").disabled = !account;
   el("auth").textContent = account ? "Сохранить изменения" : "Добавить кабинет";
   state.cooldownUntil = account?.cooldownUntil || 0;
-  setAuthorized(Boolean(account?.token));
+  setAuthorized(Boolean(account && (account.token || account.hasToken)));
 }
 
 function normalizeNumber(value) {
@@ -487,7 +491,7 @@ function updatePeriodMode() {
 }
 
 async function fetchReportDetailByPeriodPaged(
-  token,
+  credential,
   dateFrom,
   dateTo,
   onProgress,
@@ -510,7 +514,7 @@ async function fetchReportDetailByPeriodPaged(
     while (true) {
       try {
         return await wbApi.reportDetailByPeriod({
-          token,
+          ...(isBrowserHosted ? { accountId: credential } : { token: credential }),
           dateFrom,
           dateTo,
           limit,
@@ -565,25 +569,37 @@ async function authorize() {
   const name = el("account-name").value.trim();
   const token = el("token").value.trim();
   const authEl = el("auth-result");
-  if (!name || !token) {
+  let account = activeAccount();
+  if (!name || (!account && !token)) {
     authEl.textContent = "Укажите название кабинета и токен категории «Финансы».";
     authEl.style.display = "block";
     return;
   }
-  let account = activeAccount();
-  if (!account) {
-    account = { id: createAccountId(), name, token };
-    state.accounts.push(account);
-    state.activeAccountId = account.id;
-  } else {
-    account.name = name;
-    account.token = token;
+  try {
+    if (isBrowserHosted) {
+      const saved = await wbApi.saveAccount({ id: account?.id, name, token });
+      state.accounts = saved;
+      const retainedId = account?.id || state.accounts[state.accounts.length - 1]?.id;
+      state.activeAccountId = retainedId || null;
+    } else {
+      if (!account) {
+        account = { id: createAccountId(), name, token };
+        state.accounts.push(account);
+        state.activeAccountId = account.id;
+      } else {
+        account.name = name;
+        account.token = token;
+      }
+      saveAccounts();
+    }
+    renderAccounts();
+    el("token").value = "";
+    authEl.textContent = "Кабинет сохранён на сервере и доступен с других устройств.";
+    authEl.style.display = "block";
+  } catch (err) {
+    authEl.textContent = "Не удалось сохранить кабинет: " + extractErrorDetail(err);
+    authEl.style.display = "block";
   }
-  saveAccounts();
-  renderAccounts();
-  authEl.textContent =
-    "Кабинет сохранён в этом браузере. Нужен персональный или сервисный токен категории «Финансы».";
-  authEl.style.display = "block";
 }
 
 function selectAccount() {
@@ -597,40 +613,23 @@ function selectAccount() {
   }
 }
 
-function removeActiveAccount() {
+async function removeActiveAccount() {
   const account = activeAccount();
   if (!account) return;
-  state.accounts = state.accounts.filter((item) => item.id !== account.id);
-  state.activeAccountId = null;
-  saveAccounts();
-  clearResults();
-  renderAccounts();
-  el("auth-result").textContent = "Кабинет удалён из этого браузера.";
-  el("auth-result").style.display = "block";
-}
-
-function showServerLogin(message = "Войдите, чтобы открыть приложение.") {
-  if (!isBrowserHosted) return;
-  el("server-login").classList.add("is-visible");
-  el("server-login-hint").textContent = message;
-  const password = el("server-password");
-  if (password) password.focus();
-}
-
-async function initServerLogin() {
-  if (!isBrowserHosted) return;
-  el("server-logout").hidden = false;
-  showServerLogin("Проверяю доступ…");
   try {
-    const session = await wbApi.session();
-    if (session?.authenticated) {
-      el("server-login").classList.remove("is-visible");
-    } else {
-      showServerLogin();
+    if (isBrowserHosted) state.accounts = await wbApi.deleteAccount(account.id);
+    else {
+      state.accounts = state.accounts.filter((item) => item.id !== account.id);
+      saveAccounts();
     }
+    state.activeAccountId = null;
+    clearResults();
+    renderAccounts();
+    el("auth-result").textContent = "Кабинет удалён.";
   } catch (err) {
-    showServerLogin(extractErrorDetail(err));
+    el("auth-result").textContent = "Не удалось удалить кабинет: " + extractErrorDetail(err);
   }
+  el("auth-result").style.display = "block";
 }
 
 function setBusy(isBusy) {
@@ -693,7 +692,8 @@ async function fetchAndCompute() {
     return;
   }
 
-  const token = el("token").value.trim();
+  const account = activeAccount();
+  const credential = isBrowserHosted ? account?.id : el("token").value.trim();
   const mode = el("period-mode").value;
   const dateFromInput = el("date-from").value;
   const dateToInput = el("date-to").value;
@@ -701,8 +701,8 @@ async function fetchAndCompute() {
   const year = el("year").value;
   const hint = el("fetch-hint");
 
-  if (!token) {
-    hint.textContent = "Нужен токен.";
+  if (!credential) {
+    hint.textContent = "Выберите или добавьте кабинет.";
     return;
   }
   if (!state.authorized) {
@@ -741,7 +741,7 @@ async function fetchAndCompute() {
 
   try {
     const result = await fetchReportDetailByPeriodPaged(
-      token,
+      credential,
       dateFrom,
       dateTo,
       (payload) => {
@@ -776,27 +776,6 @@ el("account-select").addEventListener("change", selectAccount);
 el("remove-account").addEventListener("click", removeActiveAccount);
 el("period-mode").addEventListener("change", updatePeriodMode);
 
-el("server-login-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  el("server-login-hint").textContent = "Вхожу…";
-  try {
-    await wbApi.login(el("server-password").value);
-    el("server-password").value = "";
-    el("server-login").classList.remove("is-visible");
-  } catch (err) {
-    el("server-login-hint").textContent = extractErrorDetail(err);
-  }
-});
-
-el("server-logout").addEventListener("click", async () => {
-  try {
-    await wbApi.logout();
-  } catch (_err) {
-    // End the local session view even if the server has already restarted.
-  }
-  showServerLogin("Вы вышли из веб-приложения.");
-});
-
 window.addEventListener("error", (event) => {
   const diag = el("diagnostics");
   diag.textContent = `Ошибка приложения: ${event.message}`;
@@ -812,13 +791,20 @@ document.addEventListener("selectstart", (event) => {
 });
 
 updatePeriodMode();
-loadAccounts();
-state.activeAccountId = state.accounts[0]?.id || null;
-renderAccounts();
-initServerLogin();
+loadAccounts().then(() => {
+  state.activeAccountId = state.accounts[0]?.id || null;
+  renderAccounts();
+}).catch((err) => {
+  el("auth-result").textContent = "Не удалось открыть кабинеты: " + extractErrorDetail(err);
+  el("auth-result").style.display = "block";
+  renderAccounts();
+});
 
 el("token").addEventListener("input", () => {
-  if (el("token").value !== activeAccount()?.token) {
+  if (isBrowserHosted) {
+    setAuthorized(Boolean(activeAccount()?.hasToken || el("token").value.trim()));
+    clearResults();
+  } else if (el("token").value !== activeAccount()?.token) {
     setAuthorized(false);
     clearResults();
   } else {

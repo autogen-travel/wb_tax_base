@@ -1,0 +1,3 @@
+RewriteEngine On
+RewriteRule ^gate\.php$ - [L]
+RewriteRule ^(.*)$ gate.php?asset=$1 [QSA,L]

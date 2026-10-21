@@ -217,53 +217,7 @@ input[type="date"] {
     width: 100%;
 }
 
-.server-login {
-    display: none;
-    position: fixed;
-    inset: 0;
-    z-index: 20;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    background: rgba(14, 26, 43, 0.5);
-    backdrop-filter: blur(4px);
-}
 
-.server-login.is-visible {
-    display: flex;
-}
-
-.server-login-card {
-    width: min(100%, 420px);
-    display: grid;
-    gap: 12px;
-    padding: 28px;
-    border: 1px solid var(--line);
-    border-radius: 18px;
-    background: var(--card);
-    box-shadow: var(--shadow);
-}
-
-.server-login-card h1,
-.server-login-card p {
-    margin: 0;
-}
-
-.server-login-card label {
-    display: grid;
-    gap: 6px;
-    color: var(--muted);
-    font-size: 13px;
-}
-
-.server-login-card input {
-    padding: 11px 12px;
-    border: 1px solid #ded9ce;
-    border-radius: 10px;
-    background: #fffdf9;
-    font: inherit;
-    user-select: text;
-}
 
 .row.full-row {
     grid-template-columns: 1fr;

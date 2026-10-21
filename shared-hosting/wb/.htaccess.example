@@ -1,0 +1,5 @@
+# Routes every request through gate.php, which asks the browser for Basic Auth
+# and serves only the app's static assets and API endpoint.
+RewriteEngine On
+RewriteRule ^gate\.php$ - [L]
+RewriteRule ^(.*)$ gate.php?asset=$1 [QSA,L]

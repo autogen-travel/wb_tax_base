@@ -6,3 +6,9 @@ Thumbs.db
 *.log
 /.idea
 /.vscode
+
+/WB_BASIC_AUTH.txt
+/.wb-htpasswd
+/.wb-htpasswd-hash
+/.wb-basic-salt
+/shared-hosting/wb/.wb-auth.php
