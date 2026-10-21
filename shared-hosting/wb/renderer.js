@@ -155,7 +155,6 @@ function renderAccounts() {
   el("token").value = isBrowserHosted ? "" : (account?.token || "");
   el("token").placeholder = isBrowserHosted && account ? "Оставьте пустым, если не меняете токен" : "WB токен категории «Финансы»";
   el("remove-account").disabled = !account;
-  el("auth").textContent = account ? "Сохранить изменения" : "Добавить кабинет";
   const info = el("account-info");
   if (info) {
     const details = [];
@@ -597,8 +596,8 @@ async function fetchReportDetailByPeriodPaged(
 async function authorize() {
   const name = el("account-name").value.trim();
   const token = el("token").value.trim();
-  const authEl = el("auth-result");
-  let account = activeAccount();
+  const authEl = el("modal-result");
+  let account = state.modalCreatesNew ? null : activeAccount();
   if ((!isBrowserHosted && !name) || (!account && !token)) {
     authEl.textContent = isBrowserHosted ? "Введите токен категории «Финансы»." : "Укажите название кабинета и токен категории «Финансы».";
     authEl.style.display = "block";
@@ -624,10 +623,12 @@ async function authorize() {
     renderAccounts();
     el("token").value = "";
     const savedAccount = activeAccount();
-    authEl.textContent = isBrowserHosted && savedAccount?.sellerName
+    el("auth-result").textContent = isBrowserHosted && savedAccount?.sellerName
       ? `Проверено: ${savedAccount.sellerName}${savedAccount.sid ? " (SID " + savedAccount.sid + ")" : ""}. Токен действует до ${formatTokenExpiry(savedAccount.tokenExpiresAt)}.`
       : "Кабинет сохранён на сервере и доступен с других устройств.";
-    authEl.style.display = "block";
+    el("auth-result").style.display = "block";
+    el("account-modal").close();
+    state.modalCreatesNew = false;
   } catch (err) {
     authEl.textContent = "Не удалось сохранить кабинет: " + extractErrorDetail(err);
     authEl.style.display = "block";
@@ -639,10 +640,18 @@ function selectAccount() {
   state.activeAccountId = id === "__new__" ? null : id;
   clearResults();
   renderAccounts();
-  if (!activeAccount()) {
-    el("auth-result").textContent = "Введите данные нового кабинета.";
-    el("auth-result").style.display = "block";
-  }
+  el("auth-result").textContent = "";
+  el("auth-result").style.display = "none";
+}
+
+function openAccountModal() {
+  state.modalCreatesNew = true;
+  el("account-name").value = "";
+  el("token").value = "";
+  el("modal-result").textContent = "";
+  el("modal-result").style.display = "none";
+  el("account-modal").showModal();
+  el("token").focus();
 }
 
 async function removeActiveAccount() {
@@ -670,7 +679,7 @@ function setBusy(isBusy) {
     const node = el(id);
     if (node) node.disabled = !state.authorized || isBusy;
   });
-  ["account-select", "account-name", "token", "auth"].forEach((id) => {
+  ["account-select", "open-account-modal", "account-name", "token", "auth"].forEach((id) => {
     const node = el(id);
     if (node) node.disabled = isBusy;
   });
@@ -804,6 +813,12 @@ async function fetchAndCompute() {
 
 el("fetch").addEventListener("click", fetchAndCompute);
 el("auth").addEventListener("click", authorize);
+el("open-account-modal").addEventListener("click", openAccountModal);
+el("close-account-modal").addEventListener("click", () => el("account-modal").close());
+el("account-modal").addEventListener("close", () => { state.modalCreatesNew = false; });
+el("account-modal").addEventListener("click", (event) => {
+  if (event.target === el("account-modal")) el("account-modal").close();
+});
 el("account-select").addEventListener("change", selectAccount);
 el("remove-account").addEventListener("click", removeActiveAccount);
 el("period-mode").addEventListener("change", updatePeriodMode);
@@ -835,7 +850,7 @@ loadAccounts().then(() => {
 
 el("token").addEventListener("input", () => {
   if (isBrowserHosted) {
-    setAuthorized(Boolean(activeAccount()?.hasToken || el("token").value.trim()));
+    setAuthorized(Boolean(activeAccount()?.hasToken));
     clearResults();
   } else if (el("token").value !== activeAccount()?.token) {
     setAuthorized(false);

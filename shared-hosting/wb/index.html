@@ -37,25 +37,37 @@
                     <div class="form">
                         <label>
                             Кабинет
-                            <div class="row account-row">
-                                <select id="account-select" aria-label="Выбрать кабинет"></select>
-                                <button id="remove-account" class="ghost" type="button" title="Удалить кабинет">Удалить</button>
-                            </div>
+                            <select id="account-select" aria-label="Выбрать кабинет"></select>
                         </label>
-                        <label>
-                            Название кабинета
-                            <input id="account-name" type="text" placeholder="Необязательно — возьмём название из кабинета WB" />
-                        </label>
-                        <label>
-                            Токен WB (категория «Финансы»)
-                            <input id="token" type="password" placeholder="Сохранится на сервере для всех устройств" autocomplete="off" />
-                        </label>
-                        <button id="auth" class="ghost" type="button">Проверить и добавить кабинет</button>
-
+                        <div class="row account-actions">
+                            <button id="open-account-modal" class="ghost" type="button">Добавить кабинет</button>
+                            <button id="remove-account" class="ghost" type="button" title="Удалить выбранный кабинет">Удалить</button>
+                        </div>
                         <div class="auth-result" id="account-info"></div>
                         <div class="auth-result" id="auth-result"></div>
                     </div>
                 </div>
+
+                <dialog class="account-modal" id="account-modal" aria-labelledby="account-modal-title">
+                    <div class="modal-card">
+                        <div class="modal-heading">
+                            <h2 id="account-modal-title">Добавить кабинет Wildberries</h2>
+                            <button id="close-account-modal" class="modal-close" type="button" aria-label="Закрыть">×</button>
+                        </div>
+                        <div class="form">
+                            <label>
+                                Название кабинета <span class="muted">(необязательно)</span>
+                                <input id="account-name" type="text" placeholder="Если оставить пустым, возьмём название из WB" />
+                            </label>
+                            <label>
+                                Токен WB категории «Финансы»
+                                <input id="token" type="password" placeholder="Вставьте токен Wildberries" autocomplete="off" />
+                            </label>
+                            <button id="auth" class="primary" type="button">Проверить и добавить</button>
+                            <div class="auth-result" id="modal-result"></div>
+                        </div>
+                    </div>
+                </dialog>
 
                 <div class="card" id="sources-card">
                     <h2>Источники</h2>

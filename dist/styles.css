@@ -209,12 +209,52 @@ input[type="date"] {
     align-items: center;
 }
 
-.account-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+.account-actions {
+    grid-template-columns: 1fr auto;
+    margin-top: 2px;
 }
 
-#auth {
-    width: 100%;
+.account-modal {
+    width: min(520px, calc(100% - 28px));
+    max-height: calc(100% - 28px);
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    color: var(--ink);
+    box-shadow: 0 24px 70px rgba(25, 23, 21, 0.24);
+}
+
+.account-modal::backdrop {
+    background: rgba(14, 26, 43, 0.48);
+    backdrop-filter: blur(3px);
+}
+
+.modal-card {
+    padding: 24px;
+}
+
+.modal-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.modal-heading h2 {
+    margin: 0;
+}
+
+.modal-close {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: white;
+    color: var(--muted);
+    font-size: 24px;
+    line-height: 1;
 }
 
 
