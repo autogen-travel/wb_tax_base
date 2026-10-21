@@ -7,6 +7,19 @@
         <link rel="stylesheet" href="styles.css" />
     </head>
     <body>
+        <section class="server-login" id="server-login" aria-modal="true" role="dialog">
+            <form class="server-login-card" id="server-login-form">
+                <div class="eyebrow">WB отчёты → налоговая база</div>
+                <h1>Вход в приложение</h1>
+                <p class="muted">Введите пароль доступа, заданный владельцем сервера.</p>
+                <label>
+                    Пароль
+                    <input id="server-password" type="password" autocomplete="current-password" required />
+                </label>
+                <button class="primary" type="submit">Войти</button>
+                <div class="hint" id="server-login-hint"></div>
+            </form>
+        </section>
         <div class="app">
             <header class="hero">
                 <div>
@@ -36,18 +49,22 @@
                     <h2>Запрос по API</h2>
                     <div class="form">
                         <label>
-                            API токен WB (Финансы)
-                            <div class="row token-row">
-                                <input
-                                    id="token"
-                                    type="password"
-                                    placeholder="Вставьте токен"
-                                />
-                                <button id="auth" class="ghost">
-                                    Сохранить токен
-                                </button>
+                            Кабинет
+                            <div class="row account-row">
+                                <select id="account-select" aria-label="Выбрать кабинет"></select>
+                                <button id="remove-account" class="ghost" type="button" title="Удалить кабинет">Удалить</button>
                             </div>
                         </label>
+                        <label>
+                            Название кабинета
+                            <input id="account-name" type="text" placeholder="Например, Основной магазин" />
+                        </label>
+                        <label>
+                            API токен WB (Финансы)
+                            <input id="token" type="password" placeholder="Персональный или сервисный токен" autocomplete="off" />
+                        </label>
+                        <button id="auth" class="ghost" type="button">Добавить кабинет</button>
+                        <button id="server-logout" class="ghost" type="button" hidden>Выйти из веб-приложения</button>
                         <div class="auth-result" id="auth-result"></div>
                     </div>
                 </div>

@@ -1,0 +1,9 @@
+.git
+.github
+src-tauri
+node_modules
+target
+Dockerfile
+docker-compose.yml
+.env*
+*.log
