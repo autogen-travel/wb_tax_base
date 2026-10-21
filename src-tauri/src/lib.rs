@@ -14,22 +14,19 @@ async fn report_detail_by_period(
         .timeout(Duration::from_secs(90))
         .build()
         .map_err(|err| err.to_string())?;
-    let url = "https://statistics-api.wildberries.ru/api/v5/supplier/reportDetailByPeriod";
-    let mut params: Vec<(&str, String)> = vec![("dateFrom", date_from), ("dateTo", date_to)];
-    if let Some(val) = limit {
-        params.push(("limit", val.to_string()));
-    }
-    if let Some(val) = rrdid {
-        params.push(("rrdid", val.to_string()));
-    }
-    if let Some(val) = period {
-        params.push(("period", val));
-    }
+    let url = "https://finance-api.wildberries.ru/api/finance/v1/sales-reports/detailed";
+    let body = serde_json::json!({
+        "dateFrom": date_from,
+        "dateTo": date_to,
+        "limit": limit.unwrap_or(100000),
+        "rrdId": rrdid.unwrap_or(0),
+        "period": period.unwrap_or_else(|| "daily".to_string()),
+    });
 
     let res = client
-        .get(url)
+        .post(url)
         .header("Authorization", token)
-        .query(&params)
+        .json(&body)
         .send()
         .await
         .map_err(|err| err.to_string())?;
@@ -43,7 +40,7 @@ async fn report_detail_by_period(
         return Err(format!(
             "WB API error {}: {}",
             status,
-            text.chars().take(200).collect::<String>()
+            text.chars().take(500).collect::<String>()
         ));
     }
 

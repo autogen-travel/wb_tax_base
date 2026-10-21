@@ -72,6 +72,38 @@ function normalizeNumber(value) {
   return 0;
 }
 
+function normalizeReportRow(row) {
+  const aliases = {
+    report_type: "reportType",
+    retail_amount: "retailAmount",
+    doc_type_name: "docTypeName",
+    cashback_discount: "cashbackDiscount",
+    supplier_oper_name: "sellerOperName",
+    ppvz_for_pay: "forPay",
+    delivery_rub: "deliveryService",
+    acceptance: "paidAcceptance",
+    storage_fee: "paidStorage",
+    deduction: "deduction",
+    penalty: "penalty",
+    payment_processing: "paymentProcessing",
+    acquiring_fee: "acquiringFee",
+    ppvz_reward: "ppvzReward",
+    rebill_logistic_cost: "rebillLogisticCost",
+    srid: "srid",
+    site_country: "country",
+    nm_id: "nmId",
+    date_to: "dateTo",
+    rrd_id: "rrdId",
+  };
+  const normalized = { ...row };
+  for (const [legacy, current] of Object.entries(aliases)) {
+    if (normalized[legacy] === undefined && normalized[current] !== undefined) {
+      normalized[legacy] = normalized[current];
+    }
+  }
+  return normalized;
+}
+
 function round2(value) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
@@ -278,13 +310,32 @@ function formatApiSample(rows) {
 }
 
 function extractErrorDetail(err) {
-  const message = String(err && err.message ? err.message : err);
+  let message;
+  if (typeof err === "string") {
+    message = err;
+  } else if (err instanceof Error && err.message) {
+    message = err.message;
+  } else if (err && typeof err === "object") {
+    message = err.message || err.error || err.details || err.detail;
+    if (!message) {
+      try {
+        message = JSON.stringify(err);
+      } catch (_e) {
+        message = "Неизвестная ошибка API.";
+      }
+    }
+  } else if (err === undefined || err === null || err === "") {
+    message = "API вернул пустую ошибку. Проверьте подключение и повторите запрос.";
+  } else {
+    message = String(err);
+  }
+  message = String(message);
   const jsonStart = message.indexOf("{");
   if (jsonStart === -1) return message;
   const payload = message.slice(jsonStart);
   try {
     const parsed = JSON.parse(payload);
-    return parsed.detail || parsed.details || message;
+    return parsed.detail || parsed.details || parsed.message || message;
   } catch (_e) {
     const detailMatch =
       payload.match(/"detail"\s*:\s*"([^"]+)"/) ||
@@ -449,13 +500,9 @@ async function authorize() {
   authEl.textContent = "Запрос профиля...";
   authEl.style.display = "block";
   try {
-    const info = await wbApi.sellerInfo({ token });
-    if (!info) {
-      authEl.textContent = "Пустой ответ seller-info.";
-      setAuthorized(false);
-      return;
-    }
-    renderAuth(info);
+    authEl.textContent =
+      "Токен сохранён. Для расчёта нужен персональный или сервисный токен категории «Финансы».";
+    authEl.style.display = "block";
     setAuthorized(true);
     saveToken(token);
   } catch (err) {
@@ -582,7 +629,7 @@ async function fetchAndCompute() {
       throw new Error("Пустой ответ API за выбранный период.");
     }
 
-    const summary = calculateTaxBase(rows, dateTo);
+    const summary = calculateTaxBase(rows.map(normalizeReportRow), dateTo);
     state.lastSummary = summary;
     renderResults(summary);
     hint.textContent = `Готово. Период: ${dateFrom} → ${dateTo}.`;
